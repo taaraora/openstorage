@@ -77,6 +77,8 @@ type ClusterManager struct {
 	clusterDomainManager clusterdomain.ClusterDomainProvider
 	snapshotPrefixes     []string
 	selfClusterDomain    string
+	// kvdbWatchIndex stores the kvdb index to start the watch
+	kvdbWatchIndex uint64
 }
 
 // Init instantiates a new cluster manager.
@@ -420,14 +422,22 @@ func (c *ClusterManager) getNonDecommisionedPeers(
 func (c *ClusterManager) watchDB(key string, opaque interface{},
 	kvp *kvdb.KVPair, watchErr error) error {
 
-	db, kvdbVersion, err := readClusterInfo()
+	// restart watch incase of errors
+	if watchErr != nil && c.selfNode.Status != api.Status_STATUS_DECOMMISSION {
+		logrus.Errorf("ClusterManager watch stopped, restarting (err: %v)",
+			watchErr)
+		c.startClusterDBWatch(c.kvdbWatchIndex, kvdb.Instance())
+		return watchErr
+	}
 
-	if err != nil {
-		logrus.Warnln("Failed to read database after update ", err)
-		// Exit since an update may be missed here.
+	db, kvdbVersion, err := unmarshalClusterInfo(kvp)
+	if err != nil || len(db.NodeEntries) == 0 {
+		logrus.Errorf("watch returned nil or empty cluster database: %v", kvp)
+		// cluster database should not be nil, exit since we don't know what happened
 		os.Exit(1)
 	}
 
+	c.kvdbWatchIndex = kvdbVersion
 	// Update all the listeners with the new db
 	for e := c.listeners.Front(); e != nil; e = e.Next() {
 		err := e.Value.(cluster.ClusterListener).UpdateCluster(&c.selfNode, &db)
@@ -489,11 +499,6 @@ func (c *ClusterManager) watchDB(key string, opaque interface{},
 		}
 	}
 
-	if watchErr != nil && c.selfNode.Status != api.Status_STATUS_DECOMMISSION {
-		logrus.Errorf("ClusterManager watch stopped, restarting (err: %v)",
-			watchErr)
-		c.startClusterDBWatch(kvdbVersion, kvdb.Instance())
-	}
 	return watchErr
 }
 
@@ -692,7 +697,8 @@ done:
 func (c *ClusterManager) startClusterDBWatch(lastIndex uint64,
 	kv kvdb.Kvdb) error {
 	logrus.Infof("Cluster manager starting watch at version %d", lastIndex)
-	go kv.WatchKey(ClusterDBKey, lastIndex, nil, c.watchDB)
+	c.kvdbWatchIndex = lastIndex
+	go kv.WatchKey(ClusterDBKey, c.kvdbWatchIndex, nil, c.watchDB)
 	return nil
 }
 

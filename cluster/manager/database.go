@@ -61,10 +61,7 @@ func snapAndReadClusterInfo(snapshotPrefixes []string) (*cluster.ClusterInitStat
 		return nil, err
 	}
 
-	db := cluster.ClusterInfo{
-		Status:      api.Status_STATUS_INIT,
-		NodeEntries: make(map[string]cluster.NodeEntry),
-	}
+	db := emptyClusterInfo()
 	state := &cluster.ClusterInitState{
 		ClusterInfo: &db,
 		InitDb:      snap,
@@ -84,30 +81,37 @@ func snapAndReadClusterInfo(snapshotPrefixes []string) (*cluster.ClusterInitStat
 	return state, nil
 }
 
-func readClusterInfo() (cluster.ClusterInfo, uint64, error) {
-	kvdb := kvdb.Instance()
-
-	db := cluster.ClusterInfo{
+func emptyClusterInfo() cluster.ClusterInfo {
+	return cluster.ClusterInfo{
 		Status:      api.Status_STATUS_INIT,
 		NodeEntries: make(map[string]cluster.NodeEntry),
 	}
-	kv, err := kvdb.Get(ClusterDBKey)
+}
 
-	if err != nil && !strings.Contains(err.Error(), "Key not found") {
-		logrus.Warnln("Warning, could not read cluster database")
-		return db, 0, err
+func unmarshalClusterInfo(kv *kvdb.KVPair) (cluster.ClusterInfo, uint64, error) {
+	db := emptyClusterInfo()
+	version := uint64(0)
+	if kv != nil {
+		version = kv.KVDBIndex
 	}
-
 	if kv == nil || bytes.Compare(kv.Value, []byte("{}")) == 0 {
 		logrus.Infoln("Cluster is uninitialized...")
-		return db, 0, nil
+		return db, version, nil
 	}
 	if err := json.Unmarshal(kv.Value, &db); err != nil {
 		logrus.Warnln("Fatal, Could not parse cluster database ", kv)
-		return db, 0, err
+		return db, version, err
 	}
+	return db, version, nil
+}
 
-	return db, kv.KVDBIndex, nil
+func readClusterInfo() (cluster.ClusterInfo, uint64, error) {
+	kv, err := kvdb.Instance().Get(ClusterDBKey)
+	if err != nil && !strings.Contains(err.Error(), "Key not found") {
+		logrus.Warnln("Warning, could not read cluster database")
+		return emptyClusterInfo(), 0, err
+	}
+	return unmarshalClusterInfo(kv)
 }
 
 func writeClusterInfo(db *cluster.ClusterInfo) (*kvdb.KVPair, error) {
