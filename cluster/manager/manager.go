@@ -1548,24 +1548,11 @@ func (c *ClusterManager) updateNodeEntryDB(
 
 // SetSize sets the maximum number of nodes in a cluster.
 func (c *ClusterManager) SetSize(size int) error {
-	kvdb := kvdb.Instance()
-	kvlock, err := kvdb.LockWithID(clusterLockKey, c.config.NodeId)
-	if err != nil {
-		logrus.Warnln("Unable to obtain cluster lock for updating config", err)
-		return nil
+	updateCallbackFn := func(db *cluster.ClusterInfo) (bool, error) {
+		db.Size = size
+		return true, nil
 	}
-	defer kvdb.Unlock(kvlock)
-
-	db, _, err := readClusterInfo()
-	if err != nil {
-		return err
-	}
-
-	db.Size = size
-
-	_, err = writeClusterInfo(&db)
-
-	return err
+	return updateLockedDB("update-scheduler-name", c.selfNode.Id, updateCallbackFn)
 }
 
 func (c *ClusterManager) getNodeInfoFromClusterDb(id string) (api.Node, error) {
@@ -1594,61 +1581,31 @@ func (c *ClusterManager) getNodeInfoFromClusterDb(id string) (api.Node, error) {
 }
 
 func (c *ClusterManager) markNodeDecommission(node api.Node) error {
-	kvdb := kvdb.Instance()
-	kvlock, err := kvdb.LockWithID(clusterLockKey, c.config.NodeId)
-	if err != nil {
-		logrus.Warnln("Unable to obtain cluster lock for marking "+
-			"node decommission",
-			err)
-		return err
+	updateCallbackFn := func(db *cluster.ClusterInfo) (bool, error) {
+		nodeEntry, ok := db.NodeEntries[node.Id]
+		if !ok {
+			msg := fmt.Sprintf("Node entry does not exist, Node ID %s",
+				node.Id)
+			return false, errors.New(msg)
+		}
+
+		nodeEntry.Status = api.Status_STATUS_DECOMMISSION
+		db.NodeEntries[node.Id] = nodeEntry
+
+		if c.selfNode.Id == node.Id {
+			c.selfNode.Status = api.Status_STATUS_DECOMMISSION
+		}
+		return true, nil
 	}
-	defer kvdb.Unlock(kvlock)
-
-	db, _, err := readClusterInfo()
-	if err != nil {
-		return err
-	}
-
-	nodeEntry, ok := db.NodeEntries[node.Id]
-	if !ok {
-		msg := fmt.Sprintf("Node entry does not exist, Node ID %s",
-			node.Id)
-		return errors.New(msg)
-	}
-
-	nodeEntry.Status = api.Status_STATUS_DECOMMISSION
-	db.NodeEntries[node.Id] = nodeEntry
-
-	if c.selfNode.Id == node.Id {
-		c.selfNode.Status = api.Status_STATUS_DECOMMISSION
-	}
-	_, err = writeClusterInfo(&db)
-
-	return err
+	return updateLockedDB("markNodeDecommission", c.selfNode.Id, updateCallbackFn)
 }
 
 func (c *ClusterManager) deleteNodeFromDB(nodeID string) error {
-	// Delete node from cluster DB
-	kvdb := kvdb.Instance()
-	kvlock, err := kvdb.LockWithID(clusterLockKey, c.config.NodeId)
-	if err != nil {
-		logrus.Panicln("fatal, unable to obtain cluster lock. ", err)
+	updateCallbackFn := func(db *cluster.ClusterInfo) (bool, error) {
+		delete(db.NodeEntries, nodeID)
+		return true, nil
 	}
-	defer kvdb.Unlock(kvlock)
-
-	currentState, _, err := readClusterInfo()
-	if err != nil {
-		logrus.Errorln("Failed to read cluster info. ", err)
-		return err
-	}
-
-	delete(currentState.NodeEntries, nodeID)
-
-	_, err = writeClusterInfo(&currentState)
-	if err != nil {
-		logrus.Errorln("Failed to save the database.", err)
-	}
-	return err
+	return updateLockedDB("deleteNodeFromDB", c.selfNode.Id, updateCallbackFn)
 }
 
 // Remove node(s) from the cluster permanently.
