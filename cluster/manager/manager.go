@@ -1137,30 +1137,31 @@ func (c *ClusterManager) initListeners(
 		logrus.Infof("This node does not participates in quorum decisions")
 	}
 
-	initFunc := func(clusterInfo *cluster.ClusterInfo) error {
+	var kvClusterInfo *cluster.ClusterInfo
+	updateCallbackFn := func(db *cluster.ClusterInfo) (bool, error) {
+		db.NodeEntries[selfNodeEntry.Id] = selfNodeEntry
 		// Irrespective of whether the node is doing an Init or is
 		// already in cluster, check with listeners if it is OK to join
 		// this cluster.
 		for e := c.listeners.Front(); e != nil; e = e.Next() {
 			err := e.Value.(cluster.ClusterListener).CanNodeJoin(&c.selfNode, clusterInfo, nodeInitialized)
 			if err != nil {
-				logrus.Errorf("Failed finalizing init: %s", err.Error())
-				return err
+				logrus.Errorf("Failed finalizing init (can node join): %s", err.Error())
+				return false, err
 			}
 		}
 		// Finalize inits from subsystems under cluster db lock.
 		// finalizeCbs can be empty if this node is already initialized
 		for _, finalizeCb := range finalizeCbs {
 			if err := finalizeCb(clusterInfo); err != nil {
-				logrus.Errorf("Failed finalizing init: %s", err.Error())
-				return err
+				logrus.Errorf("Failed finalizing init (finalize): %s", err.Error())
+				return false, err
 			}
 		}
-		return nil
+		kvClusterInfo = db
+		return true, nil
 	}
-
-	kvp, kvClusterInfo, err := c.updateNodeEntryDB(selfNodeEntry,
-		initFunc)
+	kvp, err := updateAndGetDB("initListeners", selfNodeEntry.Id, updateCallbackFn)
 	if err != nil {
 		logrus.Errorln("Failed to save the database.", err)
 		return 0, nil, err
@@ -1501,40 +1502,6 @@ func (c *ClusterManager) Enumerate() (api.Cluster, error) {
 		}
 	}
 	return clusterState, nil
-}
-
-func (c *ClusterManager) updateNodeEntryDB(
-	nodeEntry cluster.NodeEntry,
-	checkCbBeforeUpdate checkFunc,
-) (*kvdb.KVPair, *cluster.ClusterInfo, error) {
-	kvdb := kvdb.Instance()
-	kvlock, err := kvdb.LockWithID(clusterLockKey, c.config.NodeId)
-	if err != nil {
-		logrus.Warnln("Unable to obtain cluster lock for updating cluster DB.",
-			err)
-		return nil, nil, err
-	}
-	defer kvdb.Unlock(kvlock)
-
-	currentState, _, err := readClusterInfo()
-	if err != nil {
-		return nil, nil, err
-	}
-
-	currentState.NodeEntries[nodeEntry.Id] = nodeEntry
-
-	if checkCbBeforeUpdate != nil {
-		err = checkCbBeforeUpdate(&currentState)
-		if err != nil {
-			return nil, nil, err
-		}
-	}
-
-	kvp, err := writeClusterInfo(&currentState)
-	if err != nil {
-		logrus.Errorln("Failed to save the database.", err)
-	}
-	return kvp, &currentState, err
 }
 
 // SetSize sets the maximum number of nodes in a cluster.

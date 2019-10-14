@@ -114,50 +114,34 @@ func readClusterInfo() (cluster.ClusterInfo, uint64, error) {
 	return unmarshalClusterInfo(kv)
 }
 
-func writeClusterInfo(db *cluster.ClusterInfo) (*kvdb.KVPair, error) {
-	kvdb := kvdb.Instance()
-	b, err := json.Marshal(db)
-	if err != nil {
-		logrus.Warnf("Fatal, Could not marshal cluster database to JSON: %v", err)
-		return nil, err
-	}
-
-	kvp, err := kvdb.Put(ClusterDBKey, b, 0)
-	if err != nil {
-		logrus.Warnf("Fatal, Could not marshal cluster database to JSON: %v", err)
-		return nil, err
-	}
-	return kvp, nil
-}
-
-func lockAndUpdateDB(fn, lockID string, cb updateCallbackFn) error {
+func lockAndUpdateDB(fn, lockID string, cb updateCallbackFn) (*kvdb.KVPair, error) {
 	kv := kvdb.Instance()
 
 	kvlock, err := kv.LockWithID(clusterLockKey, lockID)
 	if err != nil {
 		logrus.Warnf("Unable to obtain cluster lock for %v op: %v", fn, err)
-		return err
+		return nil, err
 	}
 	defer kv.Unlock(kvlock)
 
 	db, version, err := readClusterInfo()
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	update, err := cb(&db)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	if !update {
-		return nil
+		return nil, nil
 	}
 
 	if version != 0 {
 		b, err := json.Marshal(db)
 		if err != nil {
 			logrus.Warnf("Fatal, Could not marshal cluster database to JSON: %v", err)
-			return err
+			return nil, err
 		}
 
 		kvpInput := &kvdb.KVPair{
@@ -166,24 +150,30 @@ func lockAndUpdateDB(fn, lockID string, cb updateCallbackFn) error {
 			ModifiedIndex: version,
 		}
 
-		_, err = kv.CompareAndSet(kvpInput, kvdb.KVModifiedIndex, nil)
+		return kv.CompareAndSet(kvpInput, kvdb.KVModifiedIndex, nil)
 	} else {
 		// key does not exists yet, call create
-		if _, err = kv.Create(ClusterDBKey, db, 0); err == kvdb.ErrExist {
+		kvp, err := kv.Create(ClusterDBKey, db, 0)
+		if err == kvdb.ErrExist {
 			// key created, we may have lost the lock, retry
 			err = kvdb.ErrModified
 		}
+		return kvp, err
 	}
-	return err
 }
 
 func updateDB(fn, lockID string, cb updateCallbackFn) error {
+	_, err := updateAndGetDB(fn, lockID, cb)
+	return err
+}
+
+func updateAndGetDB(fn, lockID string, cb updateCallbackFn) (*kvdb.KVPair, error) {
 	for {
-		if err := lockAndUpdateDB(fn, lockID, cb); err == kvdb.ErrModified {
+		if kvp, err := lockAndUpdateDB(fn, lockID, cb); err == kvdb.ErrModified {
 			// compare and set failed, retry
 			continue
 		} else {
-			return err
+			return kvp, err
 		}
 	}
 }
