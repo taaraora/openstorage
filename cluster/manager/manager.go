@@ -666,11 +666,11 @@ func (c *ClusterManager) joinCluster(
 		logrus.Panicln("Fatal, Unable to find self node entry in local cache")
 	}
 
-	_, _, err = c.updateNodeEntryDB(selfNodeEntry, nil)
-	if err != nil {
-		return err
+	updateCallbackFn := func(db *cluster.ClusterInfo) (bool, error) {
+		db.NodeEntries[selfNodeEntry.Id] = selfNodeEntry
+		return true, nil
 	}
-	return nil
+	return updateLockedDB("joinCluster", selfNodeEntry.Id, updateCallbackFn)
 }
 
 func (c *ClusterManager) initClusterForListeners(
