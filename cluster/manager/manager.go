@@ -334,7 +334,7 @@ func (c *ClusterManager) UpdateSchedulerNodeName(schedulerNodeName string) error
 		return true, nil
 	}
 
-	return updateLockedDB("update-scheduler-name", c.selfNode.Id, updateCallbackFn)
+	return updateDB("update-scheduler-name", c.selfNode.Id, updateCallbackFn)
 }
 
 // GetData returns self node's data
@@ -670,7 +670,7 @@ func (c *ClusterManager) joinCluster(
 		db.NodeEntries[selfNodeEntry.Id] = selfNodeEntry
 		return true, nil
 	}
-	return updateLockedDB("joinCluster", selfNodeEntry.Id, updateCallbackFn)
+	return updateDB("joinCluster", selfNodeEntry.Id, updateCallbackFn)
 }
 
 func (c *ClusterManager) initClusterForListeners(
@@ -1039,53 +1039,44 @@ func (c *ClusterManager) initializeCluster(db kvdb.Kvdb, selfClusterDomain strin
 	*cluster.ClusterInfo,
 	error,
 ) {
-	kvlock, err := db.LockWithID(clusterLockKey, c.config.NodeId)
-	if err != nil {
-		logrus.Panicln("Fatal, Unable to obtain cluster lock.", err)
-	}
-	defer db.Unlock(kvlock)
-
-	clusterInfo, _, err := readClusterInfo()
-	if err != nil {
-		logrus.Panicln(err)
-	}
-
-	selfNodeEntry, ok := clusterInfo.NodeEntries[c.config.NodeId]
-	if ok && selfNodeEntry.Status == api.Status_STATUS_DECOMMISSION {
-		msg := fmt.Sprintf("Node is in decommision state, Node ID %s.",
-			c.selfNode.Id)
-		logrus.Errorln(msg)
-		return nil, cluster.ErrNodeDecommissioned
-	}
-	// Set the clusterID in db
-	clusterInfo.Id = c.config.ClusterId
-
-	if clusterInfo.Status == api.Status_STATUS_INIT {
-		logrus.Infoln("Initializing a new cluster.")
-		// Initialize self node
-		clusterInfo.Status = api.Status_STATUS_OK
-
-		err = c.initClusterForListeners(&c.selfNode)
-		if err != nil {
-			logrus.Errorln("Failed to initialize the cluster.", err)
-			return nil, err
+	var clusterInfo *cluster.ClusterInfo
+	updateCallbackFn := func(db *cluster.ClusterInfo) (bool, error) {
+		selfNodeEntry, ok := db.NodeEntries[c.config.NodeId]
+		if ok && selfNodeEntry.Status == api.Status_STATUS_DECOMMISSION {
+			msg := fmt.Sprintf("Node is in decommision state, Node ID %s.",
+				c.selfNode.Id)
+			logrus.Errorln(msg)
+			return false, cluster.ErrNodeDecommissioned
 		}
-		// While we hold the lock write the cluster info
-		// to kvdb.
-		_, err := writeClusterInfo(&clusterInfo)
-		if err != nil {
-			logrus.Errorln("Failed to initialize the cluster.", err)
-			return nil, err
+		clusterInfo = db
+		// Set the clusterID in db
+		clusterInfo.Id = c.config.ClusterId
+
+		if clusterInfo.Status == api.Status_STATUS_INIT {
+			logrus.Infoln("Initializing a new cluster.")
+			// Initialize self node
+			clusterInfo.Status = api.Status_STATUS_OK
+
+			if err := c.initClusterForListeners(&c.selfNode); err != nil {
+				logrus.Errorln("Failed to initialize the cluster.", err)
+				return false, err
+			}
+			return true, nil
+		} else if clusterInfo.Status&api.Status_STATUS_OK > 0 {
+			logrus.Infoln("Cluster state is OK... Joining the cluster.")
+			return false, nil
+		} else {
+			return false, errors.New("Fatal, Cluster is in an unexpected state.")
 		}
-	} else if clusterInfo.Status&api.Status_STATUS_OK > 0 {
-		logrus.Infoln("Cluster state is OK... Joining the cluster.")
-	} else {
-		return nil, errors.New("Fatal, Cluster is in an unexpected state.")
+	}
+	if err := updateDB("initCluster", c.config.NodeId, updateCallbackFn); err != nil {
+		logrus.Errorln("Failed to initialize the cluster.", err)
+		return nil, err
 	}
 	// Cluster database max size... 0 if unlimited.
 	c.size = clusterInfo.Size
 	c.status = api.Status_STATUS_OK
-	return &clusterInfo, nil
+	return clusterInfo, nil
 }
 
 func (c *ClusterManager) quorumMember() bool {
@@ -1552,7 +1543,7 @@ func (c *ClusterManager) SetSize(size int) error {
 		db.Size = size
 		return true, nil
 	}
-	return updateLockedDB("update-scheduler-name", c.selfNode.Id, updateCallbackFn)
+	return updateDB("update-scheduler-name", c.selfNode.Id, updateCallbackFn)
 }
 
 func (c *ClusterManager) getNodeInfoFromClusterDb(id string) (api.Node, error) {
@@ -1591,13 +1582,12 @@ func (c *ClusterManager) markNodeDecommission(node api.Node) error {
 
 		nodeEntry.Status = api.Status_STATUS_DECOMMISSION
 		db.NodeEntries[node.Id] = nodeEntry
-
 		if c.selfNode.Id == node.Id {
 			c.selfNode.Status = api.Status_STATUS_DECOMMISSION
 		}
 		return true, nil
 	}
-	return updateLockedDB("markNodeDecommission", c.selfNode.Id, updateCallbackFn)
+	return updateDB("markNodeDecommission", c.selfNode.Id, updateCallbackFn)
 }
 
 func (c *ClusterManager) deleteNodeFromDB(nodeID string) error {
@@ -1605,7 +1595,7 @@ func (c *ClusterManager) deleteNodeFromDB(nodeID string) error {
 		delete(db.NodeEntries, nodeID)
 		return true, nil
 	}
-	return updateLockedDB("deleteNodeFromDB", c.selfNode.Id, updateCallbackFn)
+	return updateDB("deleteNodeFromDB", c.selfNode.Id, updateCallbackFn)
 }
 
 // Remove node(s) from the cluster permanently.

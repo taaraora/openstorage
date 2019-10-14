@@ -130,7 +130,7 @@ func writeClusterInfo(db *cluster.ClusterInfo) (*kvdb.KVPair, error) {
 	return kvp, nil
 }
 
-func updateLockedDBInternal(fn, lockID string, cb updateCallbackFn) error {
+func lockAndUpdateDB(fn, lockID string, cb updateCallbackFn) error {
 	kv := kvdb.Instance()
 
 	kvlock, err := kv.LockWithID(clusterLockKey, lockID)
@@ -153,25 +153,34 @@ func updateLockedDBInternal(fn, lockID string, cb updateCallbackFn) error {
 		return nil
 	}
 
-	b, err := json.Marshal(db)
-	if err != nil {
-		logrus.Warnf("Fatal, Could not marshal cluster database to JSON: %v", err)
-		return err
-	}
+	if version != 0 {
+		b, err := json.Marshal(db)
+		if err != nil {
+			logrus.Warnf("Fatal, Could not marshal cluster database to JSON: %v", err)
+			return err
+		}
 
-	kvpInput := &kvdb.KVPair{
-		Key:           ClusterDBKey,
-		Value:         b,
-		ModifiedIndex: version,
-	}
+		kvpInput := &kvdb.KVPair{
+			Key:           ClusterDBKey,
+			Value:         b,
+			ModifiedIndex: version,
+		}
 
-	_, err = kv.CompareAndSet(kvpInput, kvdb.KVModifiedIndex, nil)
+		_, err = kv.CompareAndSet(kvpInput, kvdb.KVModifiedIndex, nil)
+	} else {
+		// key does not exists yet, call create
+		if _, err = kv.Create(ClusterDBKey, db, 0); err == kvdb.ErrExist {
+			// key created, we may have lost the lock, retry
+			err = kvdb.ErrModified
+		}
+	}
 	return err
 }
 
-func updateLockedDB(fn, lockID string, cb updateCallbackFn) error {
+func updateDB(fn, lockID string, cb updateCallbackFn) error {
 	for {
-		if err := updateLockedDBInternal(fn, lockID, cb); err == kvdb.ErrModified {
+		if err := lockAndUpdateDB(fn, lockID, cb); err == kvdb.ErrModified {
+			// compare and set failed, retry
 			continue
 		} else {
 			return err

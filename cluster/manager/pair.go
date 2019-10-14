@@ -321,7 +321,7 @@ func (c *ClusterManager) GetPairToken(
 		return false, nil
 	}
 
-	returnError = updateLockedDB("GetPairToken", c.selfNode.Id, updateCallbackFn)
+	returnError = updateDB("GetPairToken", c.selfNode.Id, updateCallbackFn)
 	return &api.ClusterPairTokenGetResponse{
 		Token: pairToken,
 	}, returnError
