@@ -92,7 +92,7 @@ func unmarshalClusterInfo(kv *kvdb.KVPair) (cluster.ClusterInfo, uint64, error) 
 	db := emptyClusterInfo()
 	version := uint64(0)
 	if kv != nil {
-		version = kv.KVDBIndex
+		version = kv.ModifiedIndex
 	}
 	if kv == nil || bytes.Compare(kv.Value, []byte("{}")) == 0 {
 		logrus.Infoln("Cluster is uninitialized...")
