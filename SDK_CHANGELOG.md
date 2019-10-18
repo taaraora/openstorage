@@ -2,6 +2,10 @@
 
 ## Releases
 
+### v0.66.0 - Tech Preview (10/18/2019)
+
+* Add proxy flag for credentials
+
 ### v0.65.0 - Tech Preview (09/10/2019)
 
 * Add pool UUIDs in ReplicaSet object
