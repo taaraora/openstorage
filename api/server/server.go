@@ -115,7 +115,7 @@ func StartClusterAPI(clusterApiBase string, clusterPort uint16) error {
 	clusterApi := newClusterAPI()
 
 	// start server as before
-	if _, _, err := startServer("osd", clusterApiBase, clusterPort, clusterApi); err != nil {
+	if _, _, err := startServerWithAuth("osd", clusterApiBase, clusterPort, clusterApi); err != nil {
 		return err
 	}
 

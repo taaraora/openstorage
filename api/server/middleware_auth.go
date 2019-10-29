@@ -38,6 +38,49 @@ func NewAuthMiddleware() *authMiddleware {
 type authMiddleware struct {
 }
 
+func secureDecorator(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter,r *http.Request) {
+		if auth.Enabled() {
+			tokenHeader := r.Header.Get("Authorization")
+			token := ""
+
+			if len(strings.Split(tokenHeader, " ")) > 1 {
+				token = strings.Split(tokenHeader, " ")[1]
+				w.WriteHeader(http.StatusForbidden)
+				return
+			}
+
+			if !auth.IsJwtToken(token) {
+				w.WriteHeader(http.StatusForbidden)
+				return
+			}
+
+			claims, err := auth.TokenClaims(token)
+
+			if err != nil {
+				w.WriteHeader(http.StatusForbidden)
+				return
+			}
+
+			contains := false
+
+			for _, role := range claims.Roles {
+				if role == "system.admin" {
+					contains = true
+					break
+				}
+			}
+
+			if !contains {
+				w.WriteHeader(http.StatusUnauthorized)
+				return
+			}
+		}
+
+		next.ServeHTTP(w, r)
+	}
+}
+
 func (a *authMiddleware) createWithAuth(w http.ResponseWriter, r *http.Request, next http.HandlerFunc) {
 	fn := "create"
 	_, authRequired := a.isTokenProcessingRequired(r)
