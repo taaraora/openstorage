@@ -10,6 +10,8 @@ import (
 
 	"github.com/gorilla/mux"
 	"github.com/sirupsen/logrus"
+
+	"github.com/libopenstorage/openstorage/pkg/auth"
 )
 
 // Route is a specification and  handler for a REST endpoint.
@@ -64,6 +66,7 @@ func StartVolumeMgmtAPI(
 	mgmtBase string,
 	mgmtPort uint16,
 	auth bool,
+	authenticators map[string]auth.Authenticator,
 ) (*http.Server, *http.Server, error) {
 	var (
 		unixServer, portServer *http.Server
@@ -77,6 +80,7 @@ func StartVolumeMgmtAPI(
 			mgmtBase,
 			mgmtPort,
 			volMgmtApi,
+			authenticators,
 		)
 	} else {
 		unixServer, portServer, err = startServer(
@@ -111,11 +115,11 @@ func StartVolumePluginAPI(
 
 // StartClusterAPI starts a REST server to receive driver configuration commands
 // from the CLI/UX to control the OSD cluster.
-func StartClusterAPI(clusterApiBase string, clusterPort uint16) error {
+func StartClusterAPI(clusterApiBase string, clusterPort uint16, authenticators map[string]auth.Authenticator) error {
 	clusterApi := newClusterAPI()
 
 	// start server as before
-	if _, _, err := startServer("osd", clusterApiBase, clusterPort, clusterApi); err != nil {
+	if _, _, err := startServerWithAuth("osd", clusterApiBase, clusterPort, clusterApi, authenticators); err != nil {
 		return err
 	}
 
@@ -127,15 +131,37 @@ func GetClusterAPIRoutes() []*Route {
 	return clusterApi.Routes()
 }
 
+func SetClusterAPIRoutesWithAuth(router *mux.Router, authenticators map[string]auth.Authenticator) (*mux.Router, error) {
+	clusterApi := newClusterAPI()
+	return clusterApi.SetupRoutesWithAuth(router, authenticators)
+}
+
+func GetCredentialsRoutes() []*Route {
+	return (&volAPI{}).credsRoutes()
+}
+
+func SetCredentialsRoutesWithAuth(router *mux.Router, authenticators map[string]auth.Authenticator) (*mux.Router, error) {
+	volApi := &volAPI{}
+	credRoutes := volApi.credsRoutes()
+	securityMiddleware := newSecurityMiddleware(authenticators)
+
+	for _, route := range credRoutes {
+		router.Methods(route.GetVerb()).Path(route.GetPath()).HandlerFunc(securityMiddleware(route.fn))
+	}
+
+	return router, nil
+}
+
 func startServerWithAuth(
 	name, sockBase string,
 	port uint16,
 	rs restServer,
+	authenticators map[string]auth.Authenticator,
 ) (*http.Server, *http.Server, error) {
 	var err error
 	router := mux.NewRouter()
 	router.NotFoundHandler = http.HandlerFunc(notFound)
-	router, err = rs.SetupRoutesWithAuth(router)
+	router, err = rs.SetupRoutesWithAuth(router, authenticators)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -144,7 +170,9 @@ func startServerWithAuth(
 
 func startServer(name string, sockBase string, port uint16, rs restServer) (*http.Server, *http.Server, error) {
 	router := mux.NewRouter()
-	router.NotFoundHandler = http.HandlerFunc(notFound)
+	router.NotFoundHandler = http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		writer.Write([]byte("Hello2"))
+	})
 	for _, v := range rs.Routes() {
 		router.Methods(v.verb).Path(v.path).HandlerFunc(v.fn)
 	}
@@ -167,7 +195,11 @@ func startServerCommon(name string, sockBase string, port uint16, rs restServer,
 		return nil, nil, err
 	}
 	unixServer := &http.Server{Handler: router}
-	go unixServer.Serve(listener)
+	go func() {
+		if err := unixServer.Serve(listener); err != nil {
+			logrus.Fatalf("error starting unix server %v", err)
+		}
+	}()
 
 	if port != 0 {
 		logrus.Printf("Starting REST service on port : %v", port)
@@ -180,7 +212,7 @@ func startServerCommon(name string, sockBase string, port uint16, rs restServer,
 
 type restServer interface {
 	Routes() []*Route
-	SetupRoutesWithAuth(router *mux.Router) (*mux.Router, error)
+	SetupRoutesWithAuth(router *mux.Router, authenticators map[string]auth.Authenticator) (*mux.Router, error)
 	String() string
 	logRequest(request string, id string) *logrus.Entry
 	sendError(request string, id string, w http.ResponseWriter, msg string, code int)

@@ -13,6 +13,7 @@ import (
 	client "github.com/libopenstorage/openstorage/api/client/cluster"
 	"github.com/libopenstorage/openstorage/cluster"
 	clustermanager "github.com/libopenstorage/openstorage/cluster/manager"
+	"github.com/libopenstorage/openstorage/pkg/auth"
 )
 
 const (
@@ -31,6 +32,17 @@ func newClusterAPI() restServer {
 			name:    "Cluster API",
 		},
 	}
+}
+
+func (c *clusterApi) SetupRoutesWithAuth(router *mux.Router, authenticators map[string]auth.Authenticator) (*mux.Router, error) {
+	routes := c.SecureRoutes()
+	securityMiddleware := newSecurityMiddleware(authenticators)
+
+	for _, route := range routes {
+		router.Methods(route.GetVerb()).Path(route.GetPath()).HandlerFunc(securityMiddleware(route.fn))
+	}
+
+	return router, nil
 }
 
 func (c *clusterApi) String() string {
@@ -881,4 +893,120 @@ func (c *clusterApi) getPairToken(w http.ResponseWriter, r *http.Request) {
 	}
 
 	json.NewEncoder(w).Encode(resp)
+}
+
+func (c *clusterApi) Routes() []*Route {
+	return []*Route{
+		{verb: http.MethodGet, path: clusterPath("/enumerate", cluster.APIVersion), fn: c.enumerate},
+		{verb: http.MethodGet, path: clusterPath("/gossipstate", cluster.APIVersion), fn: c.gossipState},
+		{verb: http.MethodGet, path: clusterPath("/nodestatus", cluster.APIVersion), fn: c.nodeStatus},
+		{verb: http.MethodGet, path: clusterPath("/nodehealth", cluster.APIVersion), fn: c.nodeHealth},
+		{verb: http.MethodGet, path: clusterPath("/status", cluster.APIVersion), fn: c.status},
+		{verb: http.MethodGet, path: clusterPath("/peerstatus", cluster.APIVersion), fn: c.peerStatus},
+		{verb: http.MethodGet, path: clusterPath("/inspect/{id}", cluster.APIVersion), fn: c.inspect},
+
+		{verb: http.MethodDelete, path: clusterPath("", cluster.APIVersion), fn: c.delete},
+		{verb: http.MethodDelete, path: clusterPath("/{id}", cluster.APIVersion), fn: c.delete},
+
+		{verb: http.MethodPut, path: clusterPath("/enablegossip", cluster.APIVersion), fn: c.enableGossip},
+		{verb: http.MethodPut, path: clusterPath("/disablegossip", cluster.APIVersion), fn: c.disableGossip},
+		{verb: http.MethodPut, path: clusterPath("/shutdown", cluster.APIVersion), fn: c.shutdown},
+		{verb: http.MethodPut, path: clusterPath("/shutdown/{id}", cluster.APIVersion), fn: c.shutdown},
+
+		{verb: http.MethodGet, path: clusterPath("/alerts/{resource}", cluster.APIVersion), fn: c.enumerateAlerts},
+		{verb: http.MethodGet, path: "/cluster/versions", fn: c.versions},
+
+		{verb: http.MethodDelete, path: clusterPath("/alerts/{resource}/{id}", cluster.APIVersion), fn: c.eraseAlert},
+		{verb: http.MethodPut, path: clusterPairPath("", cluster.APIVersion), fn: c.createPair},
+		{verb: http.MethodPost, path: clusterPairPath("", cluster.APIVersion), fn: c.processPair},
+		{verb: http.MethodGet, path: clusterPairPath("", cluster.APIVersion), fn: c.enumeratePairs},
+		{verb: http.MethodGet, path: clusterPairPath("/{id}", cluster.APIVersion), fn: c.getPair},
+		{verb: http.MethodPut, path: clusterPairPath("/{id}", cluster.APIVersion), fn: c.refreshPair},
+		{verb: http.MethodDelete, path: clusterPairPath("/{id}", cluster.APIVersion), fn: c.deletePair},
+		{verb: http.MethodPut, path: clusterPairPath(client.PairValidatePath+"/{id}", cluster.APIVersion), fn: c.validatePair},
+		{verb: http.MethodGet, path: clusterPath(client.PairTokenPath, cluster.APIVersion), fn: c.getPairToken},
+
+		{verb: http.MethodGet, path: clusterPath(client.SchedPath, cluster.APIVersion), fn: c.schedPolicyEnumerate},
+		{verb: http.MethodGet, path: clusterPath(client.SchedPath+"/{name}", cluster.APIVersion), fn: c.schedPolicyGet},
+		{verb: http.MethodPost, path: clusterPath(client.SchedPath, cluster.APIVersion), fn: c.schedPolicyCreate},
+		{verb: http.MethodPut, path: clusterPath(client.SchedPath, cluster.APIVersion), fn: c.schedPolicyUpdate},
+		{verb: http.MethodDelete, path: clusterPath(client.SchedPath+"/{name}", cluster.APIVersion), fn: c.schedPolicyDelete},
+		{verb: http.MethodGet, path: clusterPath(client.ObjectStorePath, cluster.APIVersion), fn: c.objectStoreInspect},
+		{verb: http.MethodPost, path: clusterPath(client.ObjectStorePath, cluster.APIVersion), fn: c.objectStoreCreate},
+		{verb: http.MethodPut, path: clusterPath(client.ObjectStorePath, cluster.APIVersion), fn: c.objectStoreUpdate},
+		{verb: http.MethodDelete, path: clusterPath(client.ObjectStorePath+"/delete", cluster.APIVersion), fn: c.objectStoreDelete},
+
+		{verb: http.MethodGet, path: clusterSecretPath("/verify", cluster.APIVersion), fn: c.secretLoginCheck},
+		{verb: http.MethodGet, path: clusterSecretPath("", cluster.APIVersion), fn: c.getSecret},
+		{verb: http.MethodPut, path: clusterSecretPath("", cluster.APIVersion), fn: c.setSecret},
+		{verb: http.MethodGet, path: clusterSecretPath("/defaultsecretkey", cluster.APIVersion), fn: c.getDefaultSecretKey},
+		{verb: http.MethodPut, path: clusterSecretPath("/defaultsecretkey", cluster.APIVersion), fn: c.setDefaultSecretKey},
+		{verb: http.MethodPost, path: clusterSecretPath("/login", cluster.APIVersion), fn: c.secretsLogin},
+
+		{verb: http.MethodGet, path: clusterPath(client.UriCluster, cluster.APIVersion), fn: c.getClusterConf},
+		{verb: http.MethodGet, path: clusterPath(client.UriNode+"/{id}", cluster.APIVersion), fn: c.getNodeConf},
+		{verb: http.MethodGet, path: clusterPath(client.UriEnumerate, cluster.APIVersion), fn: c.enumerateConf},
+		{verb: http.MethodPost, path: clusterPath(client.UriCluster, cluster.APIVersion), fn: c.setClusterConf},
+		{verb: http.MethodPost, path: clusterPath(client.UriNode, cluster.APIVersion), fn: c.setNodeConf},
+		{verb: http.MethodDelete, path: clusterPath(client.UriNode+"/{id}", cluster.APIVersion), fn: c.delNodeConf},
+		{verb: http.MethodGet, path: clusterPath("/getnodeidfromip/{idip}", cluster.APIVersion), fn: c.getNodeIdFromIp},
+	}
+}
+
+func (c *clusterApi) SecureRoutes() []*Route {
+	return []*Route{
+		{verb: http.MethodGet, path: clusterPath("/enumerate", cluster.APIVersion), fn: c.enumerate},
+		{verb: http.MethodGet, path: clusterPath("/gossipstate", cluster.APIVersion), fn: c.gossipState},
+		{verb: http.MethodGet, path: clusterPath("/nodestatus", cluster.APIVersion), fn: c.nodeStatus},
+		{verb: http.MethodGet, path: clusterPath("/nodehealth", cluster.APIVersion), fn: c.nodeHealth},
+		{verb: http.MethodGet, path: clusterPath("/status", cluster.APIVersion), fn: c.status},
+		{verb: http.MethodGet, path: clusterPath("/peerstatus", cluster.APIVersion), fn: c.peerStatus},
+		{verb: http.MethodGet, path: clusterPath("/inspect/{id}", cluster.APIVersion), fn: c.inspect},
+
+		{verb: http.MethodDelete, path: clusterPath("", cluster.APIVersion), fn: c.delete},
+		{verb: http.MethodDelete, path: clusterPath("/{id}", cluster.APIVersion), fn: c.delete},
+
+		{verb: http.MethodPut, path: clusterPath("/enablegossip", cluster.APIVersion), fn: c.enableGossip},
+		{verb: http.MethodPut, path: clusterPath("/disablegossip", cluster.APIVersion), fn: c.disableGossip},
+		{verb: http.MethodPut, path: clusterPath("/shutdown", cluster.APIVersion), fn: c.shutdown},
+		{verb: http.MethodPut, path: clusterPath("/shutdown/{id}", cluster.APIVersion), fn: c.shutdown},
+
+		{verb: http.MethodGet, path: clusterPath("/alerts/{resource}", cluster.APIVersion), fn: c.enumerateAlerts},
+		{verb: http.MethodGet, path: "/cluster/versions", fn: c.versions},
+
+		{verb: http.MethodDelete, path: clusterPath("/alerts/{resource}/{id}", cluster.APIVersion), fn: c.eraseAlert},
+		{verb: http.MethodPut, path: clusterPairPath("", cluster.APIVersion), fn: c.createPair},
+		{verb: http.MethodPost, path: clusterPairPath("", cluster.APIVersion), fn: c.processPair},
+		{verb: http.MethodGet, path: clusterPairPath("", cluster.APIVersion), fn: c.enumeratePairs},
+		{verb: http.MethodGet, path: clusterPairPath("/{id}", cluster.APIVersion), fn: c.getPair},
+		{verb: http.MethodPut, path: clusterPairPath("/{id}", cluster.APIVersion), fn: c.refreshPair},
+		{verb: http.MethodDelete, path: clusterPairPath("/{id}", cluster.APIVersion), fn: c.deletePair},
+		{verb: http.MethodPut, path: clusterPairPath(client.PairValidatePath+"/{id}", cluster.APIVersion), fn: c.validatePair},
+		{verb: http.MethodGet, path: clusterPath(client.PairTokenPath, cluster.APIVersion), fn: c.getPairToken},
+
+		{verb: http.MethodGet, path: clusterPath(client.SchedPath, cluster.APIVersion), fn: c.schedPolicyEnumerate},
+		{verb: http.MethodGet, path: clusterPath(client.SchedPath+"/{name}", cluster.APIVersion), fn: c.schedPolicyGet},
+		{verb: http.MethodPost, path: clusterPath(client.SchedPath, cluster.APIVersion), fn: c.schedPolicyCreate},
+		{verb: http.MethodPut, path: clusterPath(client.SchedPath, cluster.APIVersion), fn: c.schedPolicyUpdate},
+		{verb: http.MethodDelete, path: clusterPath(client.SchedPath+"/{name}", cluster.APIVersion), fn: c.schedPolicyDelete},
+		{verb: http.MethodGet, path: clusterPath(client.ObjectStorePath, cluster.APIVersion), fn: c.objectStoreInspect},
+		{verb: http.MethodPost, path: clusterPath(client.ObjectStorePath, cluster.APIVersion), fn: c.objectStoreCreate},
+		{verb: http.MethodPut, path: clusterPath(client.ObjectStorePath, cluster.APIVersion), fn: c.objectStoreUpdate},
+		{verb: http.MethodDelete, path: clusterPath(client.ObjectStorePath+"/delete", cluster.APIVersion), fn: c.objectStoreDelete},
+
+		{verb: http.MethodGet, path: clusterSecretPath("/verify", cluster.APIVersion), fn: c.secretLoginCheck},
+		{verb: http.MethodGet, path: clusterSecretPath("", cluster.APIVersion), fn: c.getSecret},
+		{verb: http.MethodPut, path: clusterSecretPath("", cluster.APIVersion), fn: c.setSecret},
+		{verb: http.MethodGet, path: clusterSecretPath("/defaultsecretkey", cluster.APIVersion), fn: c.getDefaultSecretKey},
+		{verb: http.MethodPut, path: clusterSecretPath("/defaultsecretkey", cluster.APIVersion), fn: c.setDefaultSecretKey},
+		{verb: http.MethodPost, path: clusterSecretPath("/login", cluster.APIVersion), fn: c.secretsLogin},
+
+		{verb: http.MethodGet, path: clusterPath(client.UriCluster, cluster.APIVersion), fn: c.getClusterConf},
+		{verb: http.MethodGet, path: clusterPath(client.UriNode+"/{id}", cluster.APIVersion), fn: c.getNodeConf},
+		{verb: http.MethodGet, path: clusterPath(client.UriEnumerate, cluster.APIVersion), fn: c.enumerateConf},
+		{verb: http.MethodPost, path: clusterPath(client.UriCluster, cluster.APIVersion), fn: c.setClusterConf},
+		{verb: http.MethodPost, path: clusterPath(client.UriNode, cluster.APIVersion), fn: c.setNodeConf},
+		{verb: http.MethodDelete, path: clusterPath(client.UriNode+"/{id}", cluster.APIVersion), fn: c.delNodeConf},
+		{verb: http.MethodGet, path: clusterPath("/getnodeidfromip/{idip}", cluster.APIVersion), fn: c.getNodeIdFromIp},
+	}
 }

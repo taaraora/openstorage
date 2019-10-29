@@ -12,17 +12,20 @@ import (
 
 	"github.com/gorilla/mux"
 	"github.com/grpc-ecosystem/grpc-gateway/runtime"
-	"github.com/libopenstorage/openstorage/api"
-	sdk "github.com/libopenstorage/openstorage/api/server/sdk"
-	clustermanager "github.com/libopenstorage/openstorage/cluster/manager"
-	"github.com/libopenstorage/openstorage/pkg/grpcserver"
-	"github.com/libopenstorage/openstorage/pkg/options"
-	"github.com/libopenstorage/openstorage/volume"
-	volumedrivers "github.com/libopenstorage/openstorage/volume/drivers"
+
 	"github.com/urfave/negroni"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+
+	"github.com/libopenstorage/openstorage/api"
+	"github.com/libopenstorage/openstorage/api/server/sdk"
+	clustermanager "github.com/libopenstorage/openstorage/cluster/manager"
+	"github.com/libopenstorage/openstorage/pkg/auth"
+	"github.com/libopenstorage/openstorage/pkg/grpcserver"
+	"github.com/libopenstorage/openstorage/pkg/options"
+	"github.com/libopenstorage/openstorage/volume"
+	volumedrivers "github.com/libopenstorage/openstorage/volume/drivers"
 )
 
 const (
@@ -1768,6 +1771,7 @@ func (vd *volAPI) Routes() []*Route {
 
 func (vd *volAPI) SetupRoutesWithAuth(
 	router *mux.Router,
+	authenticators map[string]auth.Authenticator,
 ) (*mux.Router, error) {
 	// We setup auth middlewares for all the APIs that get invoked
 	// from a Container Orchestrator.
@@ -1811,11 +1815,19 @@ func (vd *volAPI) SetupRoutesWithAuth(
 	routes = append(routes, vd.otherVolumeRoutes()...)
 	routes = append(routes, vd.snapRoutes()...)
 	routes = append(routes, vd.backupRoutes()...)
-	routes = append(routes, vd.credsRoutes()...)
 	routes = append(routes, vd.migrateRoutes()...)
 	for _, v := range routes {
 		router.Methods(v.verb).Path(v.path).HandlerFunc(v.fn)
 	}
+
+	// Decorate creds endpoints with authentication
+	credRoutes := vd.credsRoutes()
+	securityMiddleware := newSecurityMiddleware(authenticators)
+
+	for _, route := range credRoutes {
+		router.Methods(route.GetVerb()).Path(route.GetPath()).HandlerFunc(securityMiddleware(route.fn))
+	}
+
 	return router, nil
 }
 
@@ -1894,7 +1906,6 @@ func GetVolumeAPIRoutesWithAuth(
 	routes = append(routes, vd.otherVolumeRoutes()...)
 	routes = append(routes, vd.snapRoutes()...)
 	routes = append(routes, vd.backupRoutes()...)
-	routes = append(routes, vd.credsRoutes()...)
 	routes = append(routes, vd.migrateRoutes()...)
 	for _, v := range routes {
 		router.Methods(v.verb).Path(v.path).HandlerFunc(serverRegisterRoute(v.fn, preRouteCheckFn))
