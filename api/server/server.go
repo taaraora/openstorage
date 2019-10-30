@@ -9,6 +9,7 @@ import (
 	"regexp"
 
 	"github.com/gorilla/mux"
+	"github.com/libopenstorage/openstorage/pkg/auth"
 	"github.com/sirupsen/logrus"
 )
 
@@ -64,6 +65,7 @@ func StartVolumeMgmtAPI(
 	mgmtBase string,
 	mgmtPort uint16,
 	auth bool,
+	authenticators map[string]auth.Authenticator,
 ) (*http.Server, *http.Server, error) {
 	var (
 		unixServer, portServer *http.Server
@@ -77,6 +79,7 @@ func StartVolumeMgmtAPI(
 			mgmtBase,
 			mgmtPort,
 			volMgmtApi,
+			authenticators,
 		)
 	} else {
 		unixServer, portServer, err = startServer(
@@ -111,11 +114,11 @@ func StartVolumePluginAPI(
 
 // StartClusterAPI starts a REST server to receive driver configuration commands
 // from the CLI/UX to control the OSD cluster.
-func StartClusterAPI(clusterApiBase string, clusterPort uint16) error {
+func StartClusterAPI(clusterApiBase string, clusterPort uint16, authenticators map[string]auth.Authenticator) error {
 	clusterApi := newClusterAPI()
 
 	// start server as before
-	if _, _, err := startServerWithAuth("osd", clusterApiBase, clusterPort, clusterApi); err != nil {
+	if _, _, err := startServerWithAuth("osd", clusterApiBase, clusterPort, clusterApi, authenticators); err != nil {
 		return err
 	}
 
@@ -131,11 +134,12 @@ func startServerWithAuth(
 	name, sockBase string,
 	port uint16,
 	rs restServer,
+	authenticators map[string]auth.Authenticator,
 ) (*http.Server, *http.Server, error) {
 	var err error
 	router := mux.NewRouter()
 	router.NotFoundHandler = http.HandlerFunc(notFound)
-	router, err = rs.SetupRoutesWithAuth(router)
+	router, err = rs.SetupRoutesWithAuth(router, authenticators)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -180,7 +184,7 @@ func startServerCommon(name string, sockBase string, port uint16, rs restServer,
 
 type restServer interface {
 	Routes() []*Route
-	SetupRoutesWithAuth(router *mux.Router) (*mux.Router, error)
+	SetupRoutesWithAuth(router *mux.Router, authenticators map[string]auth.Authenticator) (*mux.Router, error)
 	String() string
 	logRequest(request string, id string) *logrus.Entry
 	sendError(request string, id string, w http.ResponseWriter, msg string, code int)

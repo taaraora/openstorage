@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/libopenstorage/openstorage/pkg/auth"
 	"math"
 	"net/http"
 	"strconv"
@@ -1700,6 +1701,8 @@ func (vd *volAPI) Routes() []*Route {
 
 func (vd *volAPI) SetupRoutesWithAuth(
 	router *mux.Router,
+	// TODO: check how this auth is implemented
+	_ map[string]auth.Authenticator,
 ) (*mux.Router, error) {
 	// We setup auth middlewares for all the APIs that get invoked
 	// from a Container Orchestrator.

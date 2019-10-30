@@ -3,6 +3,7 @@ package server
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/libopenstorage/openstorage/pkg/auth"
 	"net/http"
 	"strconv"
 	"strings"
@@ -33,11 +34,12 @@ func newClusterAPI() restServer {
 	}
 }
 
-func (c *clusterApi) SetupRoutesWithAuth(router *mux.Router) (*mux.Router, error) {
+func (c *clusterApi) SetupRoutesWithAuth(router *mux.Router, authenticators map[string]auth.Authenticator) (*mux.Router, error) {
 	routes := c.SecureRoutes()
+	securityMiddleware := newSecurityMiddleware(authenticators)
 
 	for _, route := range routes {
-		router.Methods(route.GetVerb()).Path(route.GetPath()).HandlerFunc(secureDecorator(route.fn))
+		router.Methods(route.GetVerb()).Path(route.GetPath()).HandlerFunc(securityMiddleware(route.fn))
 	}
 
 	return router, nil
