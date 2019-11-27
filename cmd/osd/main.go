@@ -337,11 +337,11 @@ func start(c *cli.Context) error {
 		authenticators[c.String("jwt-issuer")] = selfSigned
 	}
 
-	oidcAuth, err := oidcAuth(c)
+	oidcAuthenticator, err := oidcAuth(c)
 	if err != nil {
 		logrus.Fatalf("Failed to create self signed config: %v", err)
-	} else if oidcAuth != nil {
-		authenticators[c.String("oidc-issuer")] = oidcAuth
+	} else if oidcAuthenticator != nil {
+		authenticators[c.String("oidc-issuer")] = oidcAuthenticator
 	}
 
 	tlsConfig, err := setupSdkTls(c)
@@ -468,7 +468,38 @@ func start(c *cli.Context) error {
 			return fmt.Errorf("Failed to create a role manager")
 		}
 
-		sp, err := policy.Init(kv)
+		// Get authenticators
+		authenticators := make(map[string]auth.Authenticator)
+		selfSigned, err := selfSignedAuth(c)
+		if err != nil {
+			logrus.Fatalf("Failed to create self signed config: %v", err)
+		} else if selfSigned != nil {
+			authenticators[c.String("jwt-issuer")] = selfSigned
+		}
+
+		// Auth is enabled, setup system token manager for inter-cluster communication
+		if len(authenticators) > 0 {
+			if c.String("jwt-system-shared-secret") == "" {
+				return fmt.Errorf("Must provide a jwt-system-shared-secret if auth with oidc or shared-secret is enabled")
+			}
+
+			if len(cfg.Osd.ClusterConfig.SystemSharedSecret) == 0 {
+				cfg.Osd.ClusterConfig.SystemSharedSecret = c.String("jwt-system-shared-secret")
+			}
+
+			// Initialize system token manager if an authenticator is setup
+			stm, err := systemtoken.NewManager(&systemtoken.Config{
+				ClusterId:    cfg.Osd.ClusterConfig.ClusterId,
+				NodeId:       cfg.Osd.ClusterConfig.NodeId,
+				SharedSecret: cfg.Osd.ClusterConfig.SystemSharedSecret,
+			})
+			if err != nil {
+				return fmt.Errorf("Failed to create system token manager: %v\n", err)
+			}
+			auth.InitSystemTokenManager(stm)
+		}
+
+		sp, err := policy.Init()
 		if err != nil {
 			return fmt.Errorf("Unable to Initialise Storage Policy Manager Instances %v", err)
 		}
