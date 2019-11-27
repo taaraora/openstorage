@@ -197,7 +197,7 @@ func startServerCommon(name string, sockBase string, port uint16, rs restServer,
 	unixServer := &http.Server{Handler: router}
 	go func() {
 		if err := unixServer.Serve(listener); err != nil {
-			logrus.Fatalf("error starting unix server %v", err)
+			logrus.Errorf("error starting unix server %v", err)
 		}
 	}()
 
