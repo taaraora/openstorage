@@ -65,6 +65,7 @@ var (
 )
 
 func main() {
+	logrus.SetLevel(logrus.DebugLevel)
 	if reexec.Init() {
 		return
 	}
