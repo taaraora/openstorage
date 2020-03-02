@@ -3477,8 +3477,27 @@
 			"revisionTime": "2018-03-20T19:21:10Z"
 		},
 		{
+			"checksumSHA1": "5aCHr+rqDB76GPo6ppSn+WUqg9g=",
+			"path": "k8s.io/kubernetes/pkg/util/io",
+			"revision": "b5ec061c7ab9995a801206ea74f614ced04206d2",
+			"revisionTime": "2018-09-28T23:06:13Z"
+		},
+		{
 			"checksumSHA1": "q+rkM6GydE206qx67RPbmhRq7EU=",
 			"path": "k8s.io/kubernetes/pkg/util/mount",
+			"revision": "b5ec061c7ab9995a801206ea74f614ced04206d2",
+			"revisionTime": "2018-09-28T23:06:13Z"
+		},
+		{
+			"checksumSHA1": "BhzG900xHfQefNJx+MNiSmUfitk=",
+			"path": "k8s.io/kubernetes/pkg/util/nsenter",
+			"revision": "b5ec061c7ab9995a801206ea74f614ced04206d2",
+			"revisionTime": "2018-09-28T23:06:13Z"
+		},
+		{
+			"checksumSHA1": "Kpszj/X+Vn1HGPJmhI40KKSpcIM=",
+			"origin": "k8s.io/kubernetes/vendor/k8s.io/utils/exec",
+			"path": "k8s.io/utils/exec",
 			"revision": "b5ec061c7ab9995a801206ea74f614ced04206d2",
 			"revisionTime": "2018-09-28T23:06:13Z"
 		}
