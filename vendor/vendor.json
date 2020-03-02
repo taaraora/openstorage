@@ -2649,16 +2649,16 @@
 			"revisionTime": "2017-11-21T19:13:43Z"
 		},
 		{
-			"checksumSHA1": "COfXAfInbcFT/YRsvLUQnNKHzF0=",
-			"path": "gopkg.in/inf.v0",
-			"revision": "d2d2541c53f18d2a059457998ce2876cc8e67cbf",
-			"revisionTime": "2018-03-26T17:23:32Z"
-		},
-		{
 			"checksumSHA1": "VLBt1bkHObYI0PUkdbaoctAE9fE=",
 			"path": "gopkg.in/freddierice/go-losetup.v1",
 			"revision": "fc9adea44124401d8bfef3a97eaf61b5d44cc2c6",
 			"revisionTime": "2017-04-07T17:50:16Z"
+		},
+		{
+			"checksumSHA1": "COfXAfInbcFT/YRsvLUQnNKHzF0=",
+			"path": "gopkg.in/inf.v0",
+			"revision": "d2d2541c53f18d2a059457998ce2876cc8e67cbf",
+			"revisionTime": "2018-03-26T17:23:32Z"
 		},
 		{
 			"checksumSHA1": "tr9VfMj5HNs7UqT6MrGnqMSakOE=",
@@ -3475,6 +3475,12 @@
 			"path": "k8s.io/kubernetes/pkg/cloudprovider/providers/vsphere/vclib/diskmanagers",
 			"revision": "9f8ebd171479bec0ada837d7ee641dec2f8c6dd1",
 			"revisionTime": "2018-03-20T19:21:10Z"
+		},
+		{
+			"checksumSHA1": "q+rkM6GydE206qx67RPbmhRq7EU=",
+			"path": "k8s.io/kubernetes/pkg/util/mount",
+			"revision": "b5ec061c7ab9995a801206ea74f614ced04206d2",
+			"revisionTime": "2018-09-28T23:06:13Z"
 		}
 	],
 	"rootPath": "github.com/libopenstorage/openstorage"
