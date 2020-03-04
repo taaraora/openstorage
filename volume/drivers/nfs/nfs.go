@@ -533,7 +533,7 @@ func (d *driver) Mount(volumeID string, mountpath string, options map[string]str
 	} else {
 		// Block access
 		if d.isRaw(v) {
-			return fmt.Errorf("Volume of raw format cannot be mounted")
+			return fmt.Errorf("volume of raw format cannot be mounted")
 		}
 		if v.GetState() != api.VolumeState_VOLUME_STATE_ATTACHED {
 			return fmt.Errorf("Voume %s is not attached", volumeID)
@@ -541,7 +541,15 @@ func (d *driver) Mount(volumeID string, mountpath string, options map[string]str
 		mountExists, _ := d.mounter.Exists(v.DevicePath, mountpath)
 		if !mountExists {
 			if err := syscall.Mount(v.DevicePath, mountpath, v.Spec.Format.SimpleString(), 0, ""); err != nil {
-				return fmt.Errorf("Failed to mount %v at %v: %v", v.DevicePath, mountpath, err)
+				logrus.Errorf(
+					"failed to mount %v at %v, fs type: %s, flags: %v: %s",
+					v.DevicePath,
+					mountpath,
+					v.Spec.Format.SimpleString(),
+					0,
+					err.Error(),
+					)
+				return fmt.Errorf("failed to mount %v at %v: %v", v.DevicePath, mountpath, err)
 			}
 		}
 	}

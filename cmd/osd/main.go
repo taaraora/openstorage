@@ -65,7 +65,9 @@ var (
 )
 
 func main() {
+
 	logrus.SetLevel(logrus.DebugLevel)
+	logrus.SetFormatter(&logrus.TextFormatter{TimestampFormat:"2006-01-02T15:04:05.999Z07:00"})
 	if reexec.Init() {
 		return
 	}
@@ -74,6 +76,16 @@ func main() {
 	app.Usage = "Open Storage CLI"
 	app.Version = config.Version
 	app.Flags = []cli.Flag{
+		cli.StringFlag{
+			Name:  "loglevel,ll",
+			Usage: "set logging level",
+			Value: logrus.DebugLevel.String(),
+		},
+		cli.StringFlag{
+			Name:  "logformatter,lf",
+			Usage: "set logs formatter",
+			Value: "TXT",
+		},
 		cli.BoolFlag{
 			Name:  "json,j",
 			Usage: "output in json",
@@ -544,6 +556,7 @@ func start(c *cli.Context) error {
 		}
 	}
 
+	// TODO: should daemon react on POSIX signals? like SIGTERM SIGINT?
 	// Daemon does not exit.
 	select {}
 }
