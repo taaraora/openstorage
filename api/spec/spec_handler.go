@@ -166,7 +166,6 @@ func (d *specHandler) getVal(r *regexp.Regexp, str string) (bool, string) {
 
 func (d *specHandler) DefaultSpec() *api.VolumeSpec {
 	return &api.VolumeSpec{
-		// TODO: is it ok to have ext4 as default fs?
 		Format:  api.FSType_FS_TYPE_EXT4,
 		HaLevel: 1,
 	}

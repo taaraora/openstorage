@@ -108,8 +108,9 @@ func (s *OsdCsiServer) NodePublishVolume(
 	opts := &api.SdkVolumeAttachOptions{
 		SecretName: spec.GetPassphrase(),
 	}
+	 var attachResp *api.SdkVolumeAttachResponse
 	if driverType == api.DriverType_DRIVER_TYPE_BLOCK {
-		if _, err = mounts.Attach(ctx, &api.SdkVolumeAttachRequest{
+		if attachResp, err = mounts.Attach(ctx, &api.SdkVolumeAttachRequest{
 			VolumeId:      req.GetVolumeId(),
 			Options:       opts,
 			DriverOptions: driverOpts,
@@ -144,7 +145,7 @@ func (s *OsdCsiServer) NodePublishVolume(
 			return nil, status.Errorf(
 				codes.Aborted,
 				"Failed to mount target location %s: %s",
-				req.GetTargetPath(),
+				targetPath,
 				"failed to get device name for target location which is already mounted")
 		}
 		logrus.Debugf("NodePublishVolume mountedDeviceName[%v]", mountedDeviceName)
@@ -156,11 +157,24 @@ func (s *OsdCsiServer) NodePublishVolume(
 		return nil, status.Errorf(
 			codes.Aborted,
 			"Failed to mount target location %s: %s",
-			req.GetTargetPath(),
+			targetPath,
 			fmt.Sprintf("target location is already mounted with device %s", mountedDeviceName))
 	}
 
-	// Mount volume onto the path
+	//TODO: check attachResp is nil
+	if isBlockAccessType {
+		if err = mounter.Mount(attachResp.DevicePath, targetPath, "", []string{"bind"}); err != nil {
+			return nil, status.Errorf(
+				codes.Aborted,
+				"Failed to mount target location %s: %s",
+				targetPath,
+				fmt.Sprintf("failed to mount device %s", attachResp.DevicePath))
+		}
+
+		return &csi.NodePublishVolumeResponse{}, nil
+	}
+
+	// for volumes with mount access type just mount volume onto the path
 	if _, err := mounts.Mount(ctx, &api.SdkVolumeMountRequest{
 		VolumeId:  req.GetVolumeId(),
 		MountPath: targetPath,

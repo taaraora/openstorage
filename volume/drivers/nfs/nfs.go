@@ -537,7 +537,7 @@ func (d *driver) Mount(volumeID string, mountpath string, options map[string]str
 			return fmt.Errorf("volume of raw format cannot be mounted")
 		}
 		if v.GetState() != api.VolumeState_VOLUME_STATE_ATTACHED {
-			return fmt.Errorf("Voume %s is not attached", volumeID)
+			return fmt.Errorf("voume %s is not attached", volumeID)
 		}
 		mountExists, _ := d.mounter.Exists(v.DevicePath, mountpath)
 		if !mountExists {
