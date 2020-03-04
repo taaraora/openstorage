@@ -331,6 +331,23 @@ func (s *OsdCsiServer) CreateVolume(
 		logrus.Errorln(e)
 		return nil, status.Error(codes.InvalidArgument, e)
 	}
+	// handle filesystem type and override it even if we got it from req.GetParameters()
+	for _, c := range req.VolumeCapabilities {
+		if c.GetBlock() != nil {
+			spec.Format = api.FSType_FS_TYPE_NONE
+			break
+		}
+		if m := c.GetMount(); m != nil && m.FsType != "" {
+			spec.Format, err = api.FSTypeSimpleValueOf(m.FsType)
+			if err != nil {
+				e := fmt.Sprintf("Unsupported filesystem: %s\n", err.Error())
+				logrus.Errorln(e)
+				return nil, status.Error(codes.InvalidArgument, e)
+			}
+			break
+			// TODO: should handle m.MountFlags and somehow pass them to underlying driver
+		}
+	}
 
 	// Get PVC Metadata and add to locator.VolumeLabels
 	// This will override any storage class secrets added above.

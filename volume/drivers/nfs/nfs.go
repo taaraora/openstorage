@@ -367,6 +367,7 @@ func (d *driver) Create(
 		}
 		v = common.NewVolume(
 			volumeID,
+			//filesystem for block volume?
 			spec.GetFormat(),
 			locator,
 			source,
@@ -398,7 +399,7 @@ func (d *driver) Create(
 
 			// Create sparse file
 			if err := f.Truncate(int64(spec.Size)); err != nil {
-				logrus.Println(err)
+				logrus.Errorln(err)
 				return "", err
 			}
 
@@ -422,7 +423,7 @@ func (d *driver) Create(
 				}
 				o, err := exec.Command(cmd, dev.Path()).Output()
 				if err != nil {
-					logrus.Warnf("Failed to run command %s %s: %v\nOutput: %s", cmd, dev.Path(), err, string(o))
+					logrus.Errorf("Failed to run command %s %s: %v\nOutput: %s", cmd, dev.Path(), err, string(o))
 					return "", err
 				}
 			}
