@@ -96,43 +96,40 @@ func (s *sdkGrpcServer) auth(ctx context.Context) (context.Context, error) {
 	}
 }
 
-func (s *sdkGrpcServer) loggerServerInterceptor(
-	ctx context.Context,
-	req interface{},
-	info *grpc.UnaryServerInfo,
-	handler grpc.UnaryHandler,
-) (interface{}, error) {
-	reqid := uuid.New()
-	log := logrus.New()
-	log.Out = s.accessLogOutput
-	logger := log.WithFields(logrus.Fields{
-		"method": info.FullMethod,
-		"reqid":  reqid,
-	})
+func newLoggerServerInterceptor(logger *logrus.Entry) grpc.UnaryServerInterceptor {
+	return func(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler, ) (interface{}, error) {
+		reqid := uuid.New()
 
-	buf, err := json.Marshal(req)
-	if err != nil {
-		buf = []byte("{}")
+		logger := logger.WithFields(logrus.Fields{
+			"method": info.FullMethod,
+			"reqid":  reqid,
+		})
+
+		buf, err := json.Marshal(req)
+		if err != nil {
+			buf = []byte("{}")
+		}
+
+		logger.WithFields(logrus.Fields{"request": string(buf)}).Info("Start")
+		ts := time.Now()
+		i, err := handler(ctx, req)
+		duration := time.Now().Sub(ts)
+
+		buf, err = json.Marshal(i)
+		if err != nil {
+			buf = []byte("{}")
+		}
+
+		if err != nil {
+			logger.WithFields(logrus.Fields{"duration": duration}).Infof("Failed: %v", err)
+		} else {
+			logger.WithFields(logrus.Fields{"response": string(buf), "duration": duration}).Info("Successful")
+		}
+
+		return i, err
 	}
-
-	logger.WithFields(logrus.Fields{"request": string(buf)}).Info("Start")
-	ts := time.Now()
-	i, err := handler(ctx, req)
-	duration := time.Now().Sub(ts)
-
-	buf, err = json.Marshal(i)
-	if err != nil {
-		buf = []byte("{}")
-	}
-
-	if err != nil {
-		logger.WithFields(logrus.Fields{"duration": duration}).Infof("Failed: %v", err)
-	} else {
-		logger.WithFields(logrus.Fields{"response": string(buf), "duration": duration}).Info("Successful")
-	}
-
-	return i, err
 }
+
 
 func (s *sdkGrpcServer) authorizationServerInterceptor(
 	ctx context.Context,

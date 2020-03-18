@@ -325,8 +325,11 @@ func newSdkGrpcServer(config *ServerConfig) (*sdkGrpcServer, error) {
 	}
 
 	// Create a log object for this server
+
 	name := "SDK-" + config.Net
-	log := logrus.WithFields(logrus.Fields{
+	l := logrus.New()
+	l.Out = config.AccessOutput
+	log := l.WithFields(logrus.Fields{
 		"name": name,
 	})
 
@@ -448,21 +451,24 @@ func (s *sdkGrpcServer) Start() error {
 		s.log.Info("SDK TLS disabled")
 	}
 
+	unaryCallsLogger := s.log.WithField("module", "unary_calls_interceptor")
+	loggerServerInterceptor := newLoggerServerInterceptor(unaryCallsLogger)
+
 	// Setup authentication and authorization using interceptors if auth is enabled
 	if len(s.config.Security.Authenticators) != 0 {
 		opts = append(opts, grpc.UnaryInterceptor(
 			grpc_middleware.ChainUnaryServer(
+				loggerServerInterceptor,
 				s.rwlockIntercepter,
 				grpc_auth.UnaryServerInterceptor(s.auth),
 				s.authorizationServerInterceptor,
-				s.loggerServerInterceptor,
 				grpc_prometheus.UnaryServerInterceptor,
 			)))
 	} else {
 		opts = append(opts, grpc.UnaryInterceptor(
 			grpc_middleware.ChainUnaryServer(
+				loggerServerInterceptor,
 				s.rwlockIntercepter,
-				s.loggerServerInterceptor,
 				grpc_prometheus.UnaryServerInterceptor,
 			)))
 	}
