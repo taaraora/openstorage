@@ -53,9 +53,7 @@ const (
 	// place for subpath mounts
 	containerSubPathDirectoryName = "volume-subpaths"
 	// syscall.Openat flags used to traverse directories not following symlinks
-	nofollowFlags = unix.O_RDONLY | unix.O_NOFOLLOW
-	// flags for getting file descriptor without following the symlink
-	openFDFlags = unix.O_NOFOLLOW | unix.O_PATH
+	nofollowFlags = syscall.O_RDONLY | syscall.O_NOFOLLOW
 )
 
 // Mounter provides the default implementation of mount.Interface
@@ -422,7 +420,31 @@ func (mounter *Mounter) MakeRShared(path string) error {
 }
 
 func (mounter *Mounter) GetFileType(pathname string) (FileType, error) {
-	return getFileType(pathname)
+	var pathType FileType
+	finfo, err := os.Stat(pathname)
+	if os.IsNotExist(err) {
+		return pathType, fmt.Errorf("path %q does not exist", pathname)
+	}
+	// err in call to os.Stat
+	if err != nil {
+		return pathType, err
+	}
+
+	mode := finfo.Sys().(*syscall.Stat_t).Mode
+	switch mode & syscall.S_IFMT {
+	case syscall.S_IFSOCK:
+		return FileTypeSocket, nil
+	case syscall.S_IFBLK:
+		return FileTypeBlockDev, nil
+	case syscall.S_IFCHR:
+		return FileTypeBlockDev, nil
+	case syscall.S_IFDIR:
+		return FileTypeDirectory, nil
+	case syscall.S_IFREG:
+		return FileTypeFile, nil
+	}
+
+	return pathType, fmt.Errorf("only recognise file, directory, socket, block device and character device")
 }
 
 func (mounter *Mounter) MakeDir(pathname string) error {
@@ -740,9 +762,8 @@ func doBindSubPath(mounter Interface, subpath Subpath, kubeletPid int) (hostPath
 	mountSource := fmt.Sprintf("/proc/%d/fd/%v", kubeletPid, fd)
 
 	// Do the bind mount
-	options := []string{"bind"}
 	glog.V(5).Infof("bind mounting %q at %q", mountSource, bindPathTarget)
-	if err = mounter.Mount(mountSource, bindPathTarget, "" /*fstype*/, options); err != nil {
+	if err = mounter.Mount(mountSource, bindPathTarget, "" /*fstype*/, []string{"bind"}); err != nil {
 		return "", fmt.Errorf("error mounting %s: %s", subpath.Path, err)
 	}
 
@@ -757,10 +778,9 @@ func (mounter *Mounter) CleanSubPaths(podDir string, volumeName string) error {
 
 // This implementation is shared between Linux and NsEnterMounter
 func doCleanSubPaths(mounter Interface, podDir string, volumeName string) error {
+	glog.V(4).Infof("Cleaning up subpath mounts for %s", podDir)
 	// scan /var/lib/kubelet/pods/<uid>/volume-subpaths/<volume>/*
 	subPathDir := filepath.Join(podDir, containerSubPathDirectoryName, volumeName)
-	glog.V(4).Infof("Cleaning up subpath mounts for %s", subPathDir)
-
 	containerDirs, err := ioutil.ReadDir(subPathDir)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -975,19 +995,7 @@ func doSafeMakeDir(pathname string, base string, perm os.FileMode) error {
 	// so user can read/write it. This is the behavior of previous code.
 	// TODO: chmod all created directories, not just the last one.
 	// parentFD is the last created directory.
-
-	// Translate perm (os.FileMode) to uint32 that fchmod() expects
-	kernelPerm := uint32(perm & os.ModePerm)
-	if perm&os.ModeSetgid > 0 {
-		kernelPerm |= syscall.S_ISGID
-	}
-	if perm&os.ModeSetuid > 0 {
-		kernelPerm |= syscall.S_ISUID
-	}
-	if perm&os.ModeSticky > 0 {
-		kernelPerm |= syscall.S_ISVTX
-	}
-	if err = syscall.Fchmod(parentFD, kernelPerm); err != nil {
+	if err = syscall.Fchmod(parentFD, uint32(perm)&uint32(os.ModePerm)); err != nil {
 		return fmt.Errorf("chmod %q failed: %s", currentPath, err)
 	}
 	return nil
@@ -1016,9 +1024,7 @@ func findExistingPrefix(base, pathname string) (string, []string, error) {
 		}
 	}()
 	for i, dir := range dirs {
-		// Using O_PATH here will prevent hangs in case user replaces directory with
-		// fifo
-		childFD, err := syscall.Openat(fd, dir, unix.O_PATH, 0)
+		childFD, err := syscall.Openat(fd, dir, syscall.O_RDONLY, 0)
 		if err != nil {
 			if os.IsNotExist(err) {
 				return currentPath, dirs[i:], nil
@@ -1080,19 +1086,9 @@ func doSafeOpen(pathname string, base string) (int, error) {
 		}
 
 		glog.V(5).Infof("Opening path %s", currentPath)
-		childFD, err = syscall.Openat(parentFD, seg, openFDFlags, 0)
+		childFD, err = syscall.Openat(parentFD, seg, nofollowFlags, 0)
 		if err != nil {
 			return -1, fmt.Errorf("cannot open %s: %s", currentPath, err)
-		}
-
-		var deviceStat unix.Stat_t
-		err := unix.Fstat(childFD, &deviceStat)
-		if err != nil {
-			return -1, fmt.Errorf("Error running fstat on %s with %v", currentPath, err)
-		}
-		fileFmt := deviceStat.Mode & syscall.S_IFMT
-		if fileFmt == syscall.S_IFLNK {
-			return -1, fmt.Errorf("Unexpected symlink found %s", currentPath)
 		}
 
 		// Close parentFD

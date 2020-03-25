@@ -68,8 +68,8 @@ func main() {
 
 	logrus.SetLevel(logrus.DebugLevel)
 	logrus.SetFormatter(&logrus.TextFormatter{
-		FullTimestamp: true,
-		TimestampFormat:"2006-01-02T15:04:05.999Z07:00",
+		FullTimestamp:   true,
+		TimestampFormat: "2006-01-02T15:04:05.999Z07:00",
 	})
 	if reexec.Init() {
 		return

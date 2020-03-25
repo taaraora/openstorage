@@ -2649,12 +2649,6 @@
 			"revisionTime": "2017-11-21T19:13:43Z"
 		},
 		{
-			"checksumSHA1": "VLBt1bkHObYI0PUkdbaoctAE9fE=",
-			"path": "gopkg.in/freddierice/go-losetup.v1",
-			"revision": "fc9adea44124401d8bfef3a97eaf61b5d44cc2c6",
-			"revisionTime": "2017-04-07T17:50:16Z"
-		},
-		{
 			"checksumSHA1": "COfXAfInbcFT/YRsvLUQnNKHzF0=",
 			"path": "gopkg.in/inf.v0",
 			"revision": "d2d2541c53f18d2a059457998ce2876cc8e67cbf",
@@ -3479,27 +3473,20 @@
 		{
 			"checksumSHA1": "5aCHr+rqDB76GPo6ppSn+WUqg9g=",
 			"path": "k8s.io/kubernetes/pkg/util/io",
-			"revision": "b5ec061c7ab9995a801206ea74f614ced04206d2",
-			"revisionTime": "2018-09-28T23:06:13Z"
+			"revision": "9f8ebd171479bec0ada837d7ee641dec2f8c6dd1",
+			"revisionTime": "2018-03-20T19:21:10Z"
 		},
 		{
-			"checksumSHA1": "q+rkM6GydE206qx67RPbmhRq7EU=",
+			"checksumSHA1": "n1uzJsFIGrVRNrbNQoGPwNTc0Qw=",
 			"path": "k8s.io/kubernetes/pkg/util/mount",
-			"revision": "b5ec061c7ab9995a801206ea74f614ced04206d2",
-			"revisionTime": "2018-09-28T23:06:13Z"
+			"revision": "9f8ebd171479bec0ada837d7ee641dec2f8c6dd1",
+			"revisionTime": "2018-03-20T19:21:10Z"
 		},
 		{
 			"checksumSHA1": "BhzG900xHfQefNJx+MNiSmUfitk=",
 			"path": "k8s.io/kubernetes/pkg/util/nsenter",
-			"revision": "b5ec061c7ab9995a801206ea74f614ced04206d2",
-			"revisionTime": "2018-09-28T23:06:13Z"
-		},
-		{
-			"checksumSHA1": "Kpszj/X+Vn1HGPJmhI40KKSpcIM=",
-			"origin": "k8s.io/kubernetes/vendor/k8s.io/utils/exec",
-			"path": "k8s.io/utils/exec",
-			"revision": "b5ec061c7ab9995a801206ea74f614ced04206d2",
-			"revisionTime": "2018-09-28T23:06:13Z"
+			"revision": "9f8ebd171479bec0ada837d7ee641dec2f8c6dd1",
+			"revisionTime": "2018-03-20T19:21:10Z"
 		}
 	],
 	"rootPath": "github.com/libopenstorage/openstorage"
