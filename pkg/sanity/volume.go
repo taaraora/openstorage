@@ -54,7 +54,6 @@ var _ = Describe("Volume [Volume Tests]", func() {
 		var (
 			volumeID         string
 			numVolumesBefore int
-			numVolumesAfter  int
 		)
 
 		BeforeEach(func() {
@@ -70,9 +69,8 @@ var _ = Describe("Volume [Volume Tests]", func() {
 				err = volumedriver.Delete(volumeID)
 				Expect(err).ToNot(HaveOccurred())
 
-				volumes, err := volumedriver.Enumerate(&api.VolumeLocator{}, nil)
+				_, err := volumedriver.Enumerate(&api.VolumeLocator{}, nil)
 				Expect(err).ToNot(HaveOccurred())
-				numVolumesAfter = len(volumes)
 			}
 		})
 
