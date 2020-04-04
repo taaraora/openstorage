@@ -18,10 +18,9 @@ package csi
 
 import (
 	"fmt"
-	"os"
-
 	csi "github.com/container-storage-interface/spec/lib/go/csi"
 	"github.com/libopenstorage/openstorage/api"
+	"github.com/libopenstorage/openstorage/pkg/mount"
 	"github.com/pkg/errors"
 	"github.com/portworx/kvdb"
 	"github.com/sirupsen/logrus"
@@ -30,6 +29,7 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	mountutil "k8s.io/kubernetes/pkg/util/mount"
+	"os"
 )
 
 func (s *OsdCsiServer) NodeGetInfo(
@@ -166,6 +166,18 @@ func (s *OsdCsiServer) NodePublishVolume(
 	isMountedToRequestedTargetPath := false
 
 	mounter := mountutil.New("")
+
+	mm, err := mount.NewBindMounter()
+
+	isDevice, err  := mounter.PathIsDevice(attachedVolDevice)
+	if err != nil {
+		return nil, status.Errorf(
+			codes.Aborted,
+			"failed to ensure attached device to be device %s: %s",
+			attachedVolDevice,
+			err.Error())
+	}
+
 	isMounted, err := mounter.DeviceOpened(attachedVolDevice)
 	if err != nil {
 		return nil, status.Errorf(
@@ -175,18 +187,26 @@ func (s *OsdCsiServer) NodePublishVolume(
 			err.Error())
 	}
 
-	if isMounted {
-		mountPoints, err = getMountRefsByDev(mounter, attachedVolDevice)
-		if err != nil {
-			return nil, status.Errorf(
-				codes.Aborted,
-				"failed to get mount points for device %s: %s",
-				attachedVolDevice,
-				err.Error())
-		}
-
-		_, isMountedToRequestedTargetPath = mountPoints[targetPath]
+	mountPoints, err = getMountRefsByDev(mounter, attachedVolDevice)
+	if err != nil {
+		return nil, status.Errorf(
+			codes.Aborted,
+			"failed to get mount points for device %s: %s",
+			attachedVolDevice,
+			err.Error())
 	}
+
+	_, isMountedToRequestedTargetPath = mountPoints[targetPath]
+
+	logrus.Warnf(
+		"isMounted %v, targetPath: %v, isSingleNodeAccessMode %v, isMountedToRequestedTargetPath %v, attachedVolDevice: %v, isDevice: %v ",
+		isMounted,
+		targetPath,
+		isSingleNodeAccessMode,
+		isMountedToRequestedTargetPath,
+		attachedVolDevice,
+		isDevice,
+	)
 
 	// this scenario is common for all access modes
 	// T1=T2, requested target path and volume mount path are equal
@@ -222,21 +242,16 @@ func (s *OsdCsiServer) NodePublishVolume(
 	logrus.Debugf("NodePublishVolume block volume block[%v]", isBlockAccessType)
 
 	if isBlockAccessType {
-		if attachResp == nil || attachResp.DevicePath == "" {
-			return nil, status.Errorf(
-				codes.Aborted,
-				"device path is empty")
-		}
-		if err = mounter.Mount(attachResp.DevicePath, targetPath, "", []string{"bind"}); err != nil {
+		if err = mounter.Mount(attachedVolDevice, targetPath, "", []string{"bind"}); err != nil {
 			return nil, status.Errorf(
 				codes.Aborted,
 				"failed to mount target location %s, using device %s: err: %s",
 				targetPath,
-				attachResp.DevicePath,
+				attachedVolDevice,
 				err.Error())
 		}
 
-		logrus.Infof("Volume %s mounted on %s, isBlockAccessType: %v", volumeId, targetPath, isBlockAccessType)
+		logrus.Infof("Block volume %s mounted on %s", volumeId, targetPath)
 		return &csi.NodePublishVolumeResponse{}, nil
 	}
 
@@ -253,7 +268,7 @@ func (s *OsdCsiServer) NodePublishVolume(
 		return nil, err
 	}
 
-	logrus.Infof("Volume %s mounted on %s, isBlockAccessType: %v", volumeId, targetPath, isBlockAccessType)
+	logrus.Infof("Volume %s mounted on %s", volumeId, targetPath)
 
 	return &csi.NodePublishVolumeResponse{}, nil
 }
@@ -299,18 +314,33 @@ func (s *OsdCsiServer) NodeUnpublishVolume(
 		// Unmount only if the target path is really a mount point
 		if isNotMP, err = mounter.IsNotMountPoint(targetPath); err != nil {
 			if !os.IsNotExist(err) {
-				return nil, status.Error(codes.Internal, err.Error())
+				return nil, status.Errorf(codes.Internal,
+					"cannot find targetPath %s for volume %s, err: %s",
+					targetPath,
+					volumeID,
+					err.Error())
 			}
 		}
 		if !isNotMP {
 			// Unmounting the image
 			err = mounter.Unmount(targetPath)
 			if err != nil {
-				return nil, status.Error(codes.Internal, err.Error())
+				return nil, status.Errorf(codes.Internal,
+					"cannot unmount targetPath %s for volume %s, err: %s",
+					targetPath,
+					volumeID,
+					err.Error())
 			}
+			// hypothesis testing
+			mps, _ := mounter.List()
+			logrus.Warnf("mps: %+v", mps)
 			// Delete the mount point
-			if err = os.RemoveAll(targetPath); err != nil {
-				return nil, status.Error(codes.Internal, err.Error())
+			if err = os.Remove(targetPath); err != nil {
+				return nil, status.Errorf(codes.Internal,
+					"cannot clean targetPath %s for volume %s, err: %s",
+					targetPath,
+					volumeID,
+					err.Error())
 			}
 		}
 	}
@@ -384,14 +414,15 @@ func ensureTargetLocation(targetPath string, isBlock bool) error {
 	_, err := os.Lstat(targetPath)
 	if os.IsNotExist(err) {
 		if isBlock {
-			if err := makeFile(targetPath); err != nil {
-				return fmt.Errorf("cannot create target location %s for block volume", targetPath)
+			if err = makeFile(targetPath); err != nil {
+				return fmt.Errorf("cannot create target location %s for block volume, err: %s", targetPath, err.Error())
 			}
+
 			return nil
 		}
 
-		if err := makeDir(targetPath); err != nil {
-			return fmt.Errorf("cannot create target location %s for mount volume", targetPath)
+		if err = makeDir(targetPath); err != nil {
+			return fmt.Errorf("cannot create target location %s for mount volume, err: %s", targetPath, err.Error())
 		}
 
 		return nil
@@ -408,6 +439,11 @@ func makeFile(pathname string) error {
 			return err
 		}
 	}
+	_, err = f.Stat()
+	if err != nil {
+		return err
+	}
+
 	return nil
 }
 
@@ -418,6 +454,7 @@ func makeDir(pathname string) error {
 			return err
 		}
 	}
+
 	return nil
 }
 
